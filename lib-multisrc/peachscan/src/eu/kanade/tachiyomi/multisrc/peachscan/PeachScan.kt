@@ -153,13 +153,16 @@ abstract class PeachScan(
         }.getOrDefault(0L)
     }
 
+    private val urlsRegex = """const\s+urls\s*=\s*\[(.*?)]\s*;""".toRegex()
+
     override fun pageListParse(document: Document): List<Page> {
-        val scriptElement = document.selectFirst("script:containsData(const urls =[)")
+        val scriptElement = document.selectFirst("script:containsData(const urls)")
             ?: return document.select("#imageContainer img").mapIndexed { i, it ->
                 Page(i, document.location(), it.attr("abs:src"))
             }
 
-        val urls = scriptElement.html().substringAfter("const urls =[").substringBefore("];")
+        val urls = urlsRegex.find(scriptElement.data())?.groupValues?.get(1)
+            ?: throw Exception("Could not find image URLs")
 
         return urls.split(",").mapIndexed { i, it ->
             Page(i, document.location(), baseUrl + it.trim().removeSurrounding("'") + "#page")
@@ -195,7 +198,7 @@ abstract class PeachScan(
                 val entryIndex = splitEntryName.first().toInt()
                 val entryType = splitEntryName.last()
 
-                val imageData = if (entryType == "avif") {
+                val imageData = if (entryType == "avif" || splitEntryName.size == 1) {
                     zis.readBytes()
                 } else {
                     val svgBytes = zis.readBytes()
