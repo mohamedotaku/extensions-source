@@ -40,7 +40,7 @@ class SlimeRead : HttpSource() {
     override val supportsLatest = true
 
     override val client by lazy {
-        network.client.newBuilder()
+        network.cloudflareClient.newBuilder()
             .rateLimitHost(baseUrl.toHttpUrl(), 2)
             .rateLimitHost(apiUrl.toHttpUrl(), 1)
             .build()
@@ -51,14 +51,14 @@ class SlimeRead : HttpSource() {
     private val json: Json by injectLazy()
 
     private fun getApiUrlFromPage(): String {
-        val initClient = network.client
+        val initClient = network.cloudflareClient
         val document = initClient.newCall(GET(baseUrl, headers)).execute().asJsoup()
         val scriptUrl = document.selectFirst("script[src*=pages/_app]")?.attr("abs:src")
             ?: throw Exception("Could not find script URL")
         val script = initClient.newCall(GET(scriptUrl, headers)).execute().body.string()
         val apiUrl = FUNCTION_REGEX.find(script)?.value?.let { function ->
             BASEURL_VAL_REGEX.find(function)?.groupValues?.get(1)?.let { baseUrlVar ->
-                val regex = """let.*?$baseUrlVar\s*=.*?(?=,)""".toRegex(RegexOption.DOT_MATCHES_ALL)
+                val regex = """let.*?$baseUrlVar\s*=.*?(?=,\s*\w\s*=)""".toRegex(RegexOption.DOT_MATCHES_ALL)
                 regex.find(function)?.value?.let { varBlock ->
                     try {
                         QuickJs.create().use {
@@ -141,6 +141,7 @@ class SlimeRead : HttpSource() {
         title = info.name
         description = info.description
         genre = info.categories.joinToString()
+        url = "/book/${info.id}"
         status = when (info.status) {
             1 -> SManga.ONGOING
             2 -> SManga.COMPLETED
