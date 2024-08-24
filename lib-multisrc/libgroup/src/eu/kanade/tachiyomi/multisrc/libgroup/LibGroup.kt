@@ -188,7 +188,11 @@ abstract class LibGroup(
                             } else {
                                 it.replace("\\", "")
                             }
-                            returnValue = str.parseAs<AuthToken>()
+                            str.parseAs<AuthToken>().let { auth ->
+                                if (auth.isValid()) {
+                                    returnValue = auth
+                                }
+                            }
                         }
                         latch.countDown()
                     }
@@ -324,7 +328,7 @@ abstract class LibGroup(
                     if (currentBranch.value.branchId == defaultBranchId && sortingList == "ms_mixing") { // ms_mixing with default branch from api
                         chapters.add(it.value.toSChapter(slugUrl, defaultBranchId, isScanUser()))
                     } else if (defaultBranchId == null && sortingList == "ms_mixing") { // ms_mixing with first branch in chapter
-                        if (chapters.any { chpIt -> chpIt.chapter_number == it.value.itemNumber }) {
+                        if (chapters.any { chpIt -> chpIt.chapter_number == it.value.number.toFloat() }) {
                             chapters.add(it.value.toSChapter(slugUrl, currentBranch.value.branchId, isScanUser()))
                         }
                     } else if (sortingList == "ms_combining") { // ms_combining

@@ -21,11 +21,19 @@ class DiskusScan : MangaThemesia(
     override val versionId = 2
 
     override val client = super.client.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val headers = request.headers.newBuilder()
+                .set("Accept-Encoding", "")
+                .build()
+            chain.proceed(request.newBuilder().headers(headers).build())
+        }
         .rateLimit(2, 1, TimeUnit.SECONDS)
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
-        .set("Dnt", "1")
+        .set("Accept-Language", "pt-BR,en-US;q=0.7,en;q=0.3")
+        .set("Alt-Used", baseUrl.substringAfterLast("/"))
         .set("Sec-Fetch-Dest", "document")
         .set("Sec-Fetch-Mode", "navigate")
         .set("Sec-Fetch-Site", "same-origin")

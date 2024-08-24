@@ -8,7 +8,7 @@ import java.util.Locale
 
 class SamuraiScan : Madara(
     "SamuraiScan",
-    "https://spanish.visorsmr.com",
+    "https://latan.visorsmr.com",
     "es",
     SimpleDateFormat("dd MMMM, yyyy", Locale("es")),
 ) {
@@ -17,7 +17,7 @@ class SamuraiScan : Madara(
     override val useLoadMoreRequest = LoadMoreStrategy.Never
     override val useNewChapterEndpoint = true
 
-    override val mangaSubString = "l"
+    override val mangaSubString = "dl"
 
     override val client: OkHttpClient = super.client.newBuilder()
         .rateLimit(3)
