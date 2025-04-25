@@ -1,0 +1,8 @@
+ext {
+    extName = 'Weeb Central'
+    extClass = '.WeebCentral'
+    extVersionCode = 13
+    isNsfw = true
+}
+
+apply from: "$rootDir/common.gradle"

@@ -83,8 +83,8 @@ class Post<T>(val post: T)
 
 @Serializable
 class ChapterListResponse(
-    val isNovel: Boolean,
-    val slug: String,
+    val isNovel: Boolean = false,
+    val slug: String? = null,
     val chapters: List<Chapter>,
 )
 
@@ -93,16 +93,24 @@ class Chapter(
     private val id: Int,
     private val slug: String,
     private val number: JsonPrimitive,
-    private val createdBy: Name,
     private val createdAt: String,
     private val chapterStatus: String,
+    private val isAccessible: Boolean,
+    private val isLocked: Boolean? = false,
+    private val isTimeLocked: Boolean? = false,
+    private val mangaPost: ChapterPostDetails,
 ) {
     fun isPublic() = chapterStatus == "PUBLIC"
 
-    fun toSChapter(mangaSlug: String) = SChapter.create().apply {
-        url = "/series/$mangaSlug/$slug#$id"
-        name = "Chapter $number"
-        scanlator = createdBy.name
+    fun isAccessible() = isAccessible
+
+    fun isLocked() = (isLocked == true) || (isTimeLocked == true)
+
+    fun toSChapter(mangaSlug: String?) = SChapter.create().apply {
+        val prefix = if (isLocked()) "🔒 " else ""
+        val seriesSlug = mangaSlug ?: mangaPost.slug
+        url = "/series/$seriesSlug/$slug#$id"
+        name = "${prefix}Chapter $number"
         date_upload = try {
             dateFormat.parse(createdAt)!!.time
         } catch (_: ParseException) {
@@ -110,5 +118,10 @@ class Chapter(
         }
     }
 }
+
+@Serializable
+class ChapterPostDetails(
+    val slug: String,
+)
 
 private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH)

@@ -1,5 +1,9 @@
 package eu.kanade.tachiyomi.extension.all.comickfun
 
+import eu.kanade.tachiyomi.extension.all.comickfun.Comick.Companion.GROUP_TAGS_DEFAULT
+import eu.kanade.tachiyomi.extension.all.comickfun.Comick.Companion.INCLUDE_MU_TAGS_DEFAULT
+import eu.kanade.tachiyomi.extension.all.comickfun.Comick.Companion.SCORE_POSITION_DEFAULT
+import eu.kanade.tachiyomi.extension.all.comickfun.Comick.Companion.SHOW_ALTERNATIVE_TITLES_DEFAULT
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.serialization.SerialName
@@ -27,18 +31,26 @@ class Manga(
     val comic: Comic,
     private val artists: List<Name> = emptyList(),
     private val authors: List<Name> = emptyList(),
-    private val genres: List<Name> = emptyList(),
+    private val genres: List<Genre> = emptyList(),
     private val demographic: String? = null,
 ) {
     fun toSManga(
-        includeMuTags: Boolean = false,
-        scorePosition: String = "",
+        includeMuTags: Boolean = INCLUDE_MU_TAGS_DEFAULT,
+        scorePosition: String = SCORE_POSITION_DEFAULT,
+        showAlternativeTitles: Boolean = SHOW_ALTERNATIVE_TITLES_DEFAULT,
         covers: List<MDcovers>? = null,
-    ) =
-        SManga.create().apply {
+        groupTags: Boolean = GROUP_TAGS_DEFAULT,
+        titleLang: String,
+    ): SManga {
+        val entryTitle = comic.altTitles.firstOrNull {
+            titleLang != "all" && !it.lang.isNullOrBlank() && titleLang.startsWith(it.lang)
+        }?.title ?: comic.title
+        val titles = listOf(Title(title = comic.title)) + comic.altTitles
+
+        return SManga.create().apply {
             // appennding # at end as part of migration from slug to hid
             url = "/comic/${comic.hid}#"
-            title = comic.title
+            title = entryTitle
             description = buildString {
                 if (scorePosition == "top") append(comic.fancyScore)
                 val desc = comic.desc?.beautifyDescription()
@@ -50,13 +62,14 @@ class Manga(
                     if (this.isNotEmpty()) append("\n\n")
                     append(comic.fancyScore)
                 }
-                if (comic.altTitles.isNotEmpty()) {
+                if (showAlternativeTitles && comic.altTitles.isNotEmpty()) {
                     if (this.isNotEmpty()) append("\n\n")
                     append("Alternative Titles:\n")
                     append(
-                        comic.altTitles.mapNotNull { title ->
-                            title.title?.let { "• $it" }
-                        }.joinToString("\n"),
+                        titles.distinctBy { it.title }.filter { it.title != entryTitle }
+                            .mapNotNull { title ->
+                                title.title?.let { "• $it" }
+                            }.joinToString("\n"),
                     )
                 }
                 if (scorePosition == "bottom") {
@@ -73,20 +86,25 @@ class Manga(
             artist = artists.joinToString { it.name.trim() }
             author = authors.joinToString { it.name.trim() }
             genre = buildList {
-                comic.origination?.let(::add)
-                demographic?.let { add(Name(it)) }
-                addAll(genres)
-                addAll(comic.mdGenres.mapNotNull { it.name })
+                comic.origination?.let { add(Genre("Origination", it.name)) }
+                demographic?.let { add(Genre("Demographic", it)) }
+                addAll(
+                    comic.mdGenres.mapNotNull { it.genre }.sortedBy { it.group }
+                        .sortedBy { it.name },
+                )
+                addAll(genres.sortedBy { it.group }.sortedBy { it.name })
                 if (includeMuTags) {
-                    comic.muGenres.categories.forEach { category ->
-                        category?.category?.title?.let { add(Name(it)) }
-                    }
+                    addAll(
+                        comic.muGenres.categories.mapNotNull { it?.category?.title }.sorted()
+                            .map { Genre("Category", it) },
+                    )
                 }
             }
                 .distinctBy { it.name }
-                .filter { it.name.isNotBlank() }
-                .joinToString { it.name.trim() }
+                .filterNot { it.name.isNullOrBlank() || it.group.isNullOrBlank() }
+                .joinToString { if (groupTags) "${it.group}:${it.name?.trim()}" else "${it.name?.trim()}" }
         }
+    }
 }
 
 @Serializable
@@ -104,6 +122,7 @@ class Comic(
     @SerialName("md_comic_md_genres") val mdGenres: List<MdGenres>,
     @SerialName("mu_comics") val muGenres: MuComicCategories = MuComicCategories(emptyList()),
     @SerialName("bayesian_rating") val score: String? = null,
+    @SerialName("iso639_1") val isoLang: String? = null,
 ) {
     val origination = when (country) {
         "jp" -> Name("Manga")
@@ -126,7 +145,13 @@ class Comic(
 
 @Serializable
 class MdGenres(
-    @SerialName("md_genres") val name: Name? = null,
+    @SerialName("md_genres") val genre: Genre? = null,
+)
+
+@Serializable
+class Genre(
+    val group: String? = null,
+    val name: String? = null,
 )
 
 @Serializable
@@ -148,11 +173,13 @@ class Covers(
 class MDcovers(
     val b2key: String?,
     val vol: String? = null,
+    val locale: String? = null,
 )
 
 @Serializable
 class Title(
     val title: String?,
+    val lang: String? = null,
 )
 
 @Serializable

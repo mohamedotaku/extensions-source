@@ -1,9 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.mangadex
 
-import android.app.Application
 import android.content.SharedPreferences
 import android.os.Build
-import android.widget.Toast
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
@@ -33,6 +31,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.decodeFromString
 import okhttp3.CacheControl
 import okhttp3.Headers
@@ -41,8 +40,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import java.util.Date
 
 abstract class MangaDex(final override val lang: String, private val dexLang: String = lang) :
@@ -54,9 +51,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
 
     override val supportsLatest = true
 
-    private val preferences: SharedPreferences by lazy {
-        Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
-    }
+    private val preferences by getPreferencesLazy { sanitizeExistingUuidPrefs() }
 
     private val helper = MangaDexHelper(lang)
 
@@ -67,6 +62,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
             "Keiyoushi"
 
         val builder = super.headersBuilder().apply {
+            set("User-Agent", "Tachiyomi " + System.getProperty("http.agent"))
             set("Referer", "$baseUrl/")
             set("Origin", baseUrl)
             set("Extra", extraHeader)
@@ -75,15 +71,10 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
         return builder
     }
 
-    override val client = network.client.newBuilder()
+    override val client = network.cloudflareClient.newBuilder()
         .rateLimit(3)
-        .addInterceptor(MdAtHomeReportInterceptor(network.client, headers))
-        .addInterceptor(MdUserAgentInterceptor(preferences, dexLang))
+        .addInterceptor(MdAtHomeReportInterceptor(network.cloudflareClient, headers))
         .build()
-
-    init {
-        preferences.sanitizeExistingUuidPrefs()
-    }
 
     // Popular manga section
 
@@ -117,7 +108,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
                     .firstInstanceOrNull<CoverArtDto>()
                     ?.attributes?.fileName
             }
-            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang)
+            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang, preferences.preferExtensionLangTitle)
         }
 
         return MangasPage(mangaList, mangaListDto.hasNextPage)
@@ -181,7 +172,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
                     .firstInstanceOrNull<CoverArtDto>()
                     ?.attributes?.fileName
             }
-            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang)
+            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang, preferences.preferExtensionLangTitle)
         }
 
         return MangasPage(mangaList, chapterListDto.hasNextPage)
@@ -364,7 +355,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
                     .firstInstanceOrNull<CoverArtDto>()
                     ?.attributes?.fileName
             }
-            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang)
+            helper.createBasicManga(mangaDataDto, fileName, coverSuffix, dexLang, preferences.preferExtensionLangTitle)
         }
 
         return mangaList
@@ -395,7 +386,7 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
     // Manga Details section
 
     override fun getMangaUrl(manga: SManga): String {
-        return baseUrl + manga.url + "/" + helper.titleToSlug(manga.title)
+        return baseUrl + manga.url.replace("/manga/", "/title/") + "/" + helper.titleToSlug(manga.title)
     }
 
     /**
@@ -427,6 +418,8 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
             dexLang,
             preferences.coverQuality,
             preferences.altTitlesInDesc,
+            preferences.preferExtensionLangTitle,
+            preferences.finalChapterInDesc,
         )
     }
 
@@ -761,27 +754,33 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
             }
         }
 
-        val userAgentPref = EditTextPreference(screen.context).apply {
-            key = MDConstants.getCustomUserAgentPrefKey(dexLang)
-            title = helper.intl["set_custom_useragent"]
-            summary = helper.intl["set_custom_useragent_summary"]
-            dialogMessage = helper.intl.format(
-                "set_custom_useragent_dialog",
-                MDConstants.defaultUserAgent,
-            )
-
-            setDefaultValue(MDConstants.defaultUserAgent)
+        val preferExtensionLangTitlePref = SwitchPreferenceCompat(screen.context).apply {
+            key = MDConstants.getPreferExtensionLangTitlePrefKey(dexLang)
+            title = helper.intl["prefer_title_in_extension_language"]
+            summary = helper.intl["prefer_title_in_extension_language_summary"]
+            setDefaultValue(true)
 
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    Headers.Builder().add("User-Agent", newValue as String)
-                    summary = newValue
-                    true
-                } catch (e: Throwable) {
-                    val errorMessage = helper.intl.format("set_custom_useragent_error_invalid", e.message)
-                    Toast.makeText(screen.context, errorMessage, Toast.LENGTH_LONG).show()
-                    false
-                }
+                val checkValue = newValue as Boolean
+
+                preferences.edit()
+                    .putBoolean(MDConstants.getPreferExtensionLangTitlePrefKey(dexLang), checkValue)
+                    .commit()
+            }
+        }
+
+        val finalChapterInDescPref = SwitchPreferenceCompat(screen.context).apply {
+            key = MDConstants.getFinalChapterInDescPrefKey(dexLang)
+            title = helper.intl["final_chapter_in_description"]
+            summary = helper.intl["final_chapter_in_description_summary"]
+            setDefaultValue(true)
+
+            setOnPreferenceChangeListener { _, newValue ->
+                val checkValue = newValue as Boolean
+
+                preferences.edit()
+                    .putBoolean(MDConstants.getFinalChapterInDescPrefKey(dexLang), checkValue)
+                    .commit()
             }
         }
 
@@ -790,11 +789,12 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
         screen.addPreference(dataSaverPref)
         screen.addPreference(standardHttpsPortPref)
         screen.addPreference(altTitlesInDescPref)
+        screen.addPreference(preferExtensionLangTitlePref)
+        screen.addPreference(finalChapterInDescPref)
         screen.addPreference(contentRatingPref)
         screen.addPreference(originalLanguagePref)
         screen.addPreference(blockedGroupsPref)
         screen.addPreference(blockedUploaderPref)
-        screen.addPreference(userAgentPref)
     }
 
     override fun getFilterList(): FilterList =
@@ -869,11 +869,11 @@ abstract class MangaDex(final override val lang: String, private val dexLang: St
     private val SharedPreferences.altTitlesInDesc
         get() = getBoolean(MDConstants.getAltTitlesInDescPrefKey(dexLang), false)
 
-    private val SharedPreferences.customUserAgent
-        get() = getString(
-            MDConstants.getCustomUserAgentPrefKey(dexLang),
-            MDConstants.defaultUserAgent,
-        )
+    private val SharedPreferences.preferExtensionLangTitle
+        get() = getBoolean(MDConstants.getPreferExtensionLangTitlePrefKey(dexLang), true)
+
+    private val SharedPreferences.finalChapterInDesc
+        get() = getBoolean(MDConstants.getFinalChapterInDescPrefKey(dexLang), true)
 
     /**
      * Previous versions of the extension allowed invalid UUID values to be stored in the

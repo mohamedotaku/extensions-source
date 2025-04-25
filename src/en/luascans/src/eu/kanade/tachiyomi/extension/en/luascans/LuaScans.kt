@@ -1,50 +1,19 @@
 package eu.kanade.tachiyomi.extension.en.luascans
 
-import eu.kanade.tachiyomi.multisrc.mangathemesia.MangaThemesia
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
-import okhttp3.Cookie
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
-import okhttp3.Response
-import org.jsoup.Jsoup
+import eu.kanade.tachiyomi.multisrc.heancms.HeanCms
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
-class LuaScans : MangaThemesia(
+class LuaScans : HeanCms(
     "Lua Scans",
-    "https://luacomic.net",
+    "https://luacomic.org",
     "en",
 ) {
-    override val client: OkHttpClient = super.client.newBuilder()
-        .addInterceptor(::wafffCookieInterceptor)
-        .rateLimit(2)
-        .build()
+    // Moved from Keyoapp to HeanCms
+    override val versionId = 3
 
-    private fun wafffCookieInterceptor(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        val response = chain.proceed(request)
+    override val useNewChapterEndpoint = true
 
-        val document = Jsoup.parse(
-            response.peekBody(Long.MAX_VALUE).string(),
-            response.request.url.toString(),
-        )
-
-        return if (document.selectFirst("script:containsData(wafff)") != null) {
-            val script = document.selectFirst("script:containsData(wafff)")!!.data()
-
-            val cookie = waffRegex.find(script)?.groups?.get("waff")?.value
-                ?.let { Cookie.parse(request.url, it) }
-
-            client.cookieJar.saveFromResponse(
-                request.url,
-                listOfNotNull(cookie),
-            )
-
-            response.close()
-
-            chain.proceed(request)
-        } else {
-            response
-        }
-    }
-
-    private val waffRegex = Regex("""document\.cookie\s*=\s*['"](?<waff>.*)['"]""")
+    override val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
 }

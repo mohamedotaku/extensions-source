@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.multisrc.kemono
 
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import keiyoushi.utils.tryParse
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.double
@@ -9,15 +10,24 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 @Serializable
-class KemonoCreatorDto(
-    private val id: String,
+class KemonoFavouritesDto(
+    val id: String,
     val name: String,
-    private val service: String,
+    val service: String,
+    val faved_seq: Long,
+)
+
+@Serializable
+class KemonoCreatorDto(
+    val id: String,
+    val name: String,
+    val service: String,
     private val updated: JsonPrimitive,
     val favorited: Int = -1,
 ) {
+    var fav: Long = 0
     val updatedDate get() = when {
-        updated.isString -> dateFormat.parse(updated.content)?.time ?: 0
+        updated.isString -> dateFormat.tryParse(updated.content)
         else -> (updated.double * 1000).toLong()
     }
 
@@ -44,12 +54,17 @@ class KemonoCreatorDto(
 }
 
 @Serializable
+class KemonoPostDtoWrapped(
+    val post: KemonoPostDto,
+)
+
+@Serializable
 class KemonoPostDto(
     private val id: String,
     private val service: String,
     private val user: String,
     private val title: String,
-    private val added: String,
+    private val added: String?,
     private val published: String?,
     private val edited: String?,
     private val file: KemonoFileDto,
@@ -57,7 +72,7 @@ class KemonoPostDto(
 ) {
     val images: List<String>
         get() = buildList(attachments.size + 1) {
-            if (file.path != null) add(KemonoAttachmentDto(file.name!!, file.path))
+            if (file.path != null) add(KemonoAttachmentDto(file.name, file.path))
             addAll(attachments)
         }.filter {
             when (it.path.substringAfterLast('.').lowercase()) {
@@ -67,13 +82,13 @@ class KemonoPostDto(
         }.distinctBy { it.path }.map { it.toString() }
 
     fun toSChapter() = SChapter.create().apply {
-        val postDate = dateFormat.parse(edited ?: published ?: added)
+        val postDate = dateFormat.tryParse(edited ?: published ?: added)
 
         url = "/$service/user/$user/post/$id"
-        date_upload = postDate?.time ?: 0
+        date_upload = postDate
         name = title.ifBlank {
             val postDateString = when {
-                postDate != null && postDate.time != 0L -> chapterNameDateFormat.format(postDate)
+                postDate != 0L -> chapterNameDateFormat.format(postDate)
                 else -> "unknown date"
             }
 
@@ -93,8 +108,8 @@ class KemonoFileDto(val name: String? = null, val path: String? = null)
 
 // name might have ".jpe" extension for JPEG, path might have ".m4v" extension for MP4
 @Serializable
-class KemonoAttachmentDto(val name: String, val path: String) {
-    override fun toString() = "$path?f=$name"
+class KemonoAttachmentDto(var name: String? = null, val path: String) {
+    override fun toString() = path + if (name != null) "?f=$name" else ""
 }
 
 private fun getApiDateFormat() =

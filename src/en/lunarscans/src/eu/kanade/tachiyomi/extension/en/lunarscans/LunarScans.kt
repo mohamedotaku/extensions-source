@@ -1,23 +1,39 @@
 package eu.kanade.tachiyomi.extension.en.lunarscans
 
+import androidx.preference.PreferenceScreen
+import eu.kanade.tachiyomi.lib.randomua.addRandomUAPreferenceToScreen
+import eu.kanade.tachiyomi.lib.randomua.getPrefCustomUA
+import eu.kanade.tachiyomi.lib.randomua.getPrefUAType
+import eu.kanade.tachiyomi.lib.randomua.setRandomUserAgent
 import eu.kanade.tachiyomi.multisrc.mangathemesia.MangaThemesia
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.interceptor.rateLimit
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Page
+import keiyoushi.utils.getPreferences
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import okhttp3.Request
 import org.jsoup.nodes.Document
 
-class LunarScans : MangaThemesia(
-    "Lunar Scans",
-    "https://lunarscan.org",
-    "en",
-    "/series",
-) {
+class LunarScans :
+    MangaThemesia(
+        "Lunar Scans",
+        "https://lunarscan.org",
+        "en",
+        "/series",
+    ),
+    ConfigurableSource {
+
+    private val preferences = getPreferences()
+
     override val client = super.client.newBuilder()
+        .setRandomUserAgent(
+            preferences.getPrefUAType(),
+            preferences.getPrefCustomUA(),
+        )
         .rateLimit(1)
         .build()
 
@@ -69,6 +85,10 @@ class LunarScans : MangaThemesia(
         val tsReader = json.decodeFromString<TSReader>(jsonString)
         val imageUrls = tsReader.sources.firstOrNull()?.images ?: return emptyList()
         return imageUrls.mapIndexed { index, imageUrl -> Page(index, document.location(), imageUrl) }
+    }
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        addRandomUAPreferenceToScreen(screen)
     }
 
     @Serializable
